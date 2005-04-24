@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 # Import what we need
 use Carp qw( croak );
@@ -475,9 +475,13 @@ POE::Component::Lightspeed::Server - The "hubs" of the Lightspeed network
 
 =head1 CHANGES
 
+=head2 0.02
+
+	- Documentation tweaks
+
 =head2 0.01
 
-	Initial Revision
+	- Initial Revision
 
 =head1 DESCRIPTION
 
@@ -552,7 +556,8 @@ It's pretty strict about the initial connection to the client, and will disconne
 There's only one command you can send: the shutdown event.
 
 Keep in mind that you need the alias of the session if you have several of them running!
-	$kernel->post( 'lightspeed_server', 'shutdown' );
+
+$kernel->post( 'lightspeed_server', 'shutdown' );
 
 =head2 Notes
 

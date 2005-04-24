@@ -1,18 +1,12 @@
 # Declare our package
-package POE::Component::Lightspeed::Hack::Session;
+package POE::Component::Lightspeed::Hack::Events;
 
 # Standard stuff to catch errors
 use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.01';
-
-# Import the constants
-use POE::Component::Lightspeed::Constants qw( FROM_KERNEL FROM_SESSION FROM_STATE FROM_FILE FROM_LINE );
-
-# Fool programs even more based on our inheritance
-use base qw( POE::Session );
+our $VERSION = do {my@r=(q$Revision: 1.3 $=~/\d+/g);sprintf"%d."."%04d"x$#r,@r};
 
 # These methods are folded into POE::Kernel;
 package POE::Kernel;

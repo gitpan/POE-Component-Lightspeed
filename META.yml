@@ -1,7 +1,7 @@
 # http://module-build.sourceforge.net/META-spec.html
 #XXXXXXX This is a prototype!!!  It will change in the future!!! XXXXX#
 name:         POE-Component-Lightspeed
-version:      0.01
+version:      0.02
 version_from: lib/POE/Component/Lightspeed.pm
 installdirs:  site
 requires:

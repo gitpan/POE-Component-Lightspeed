@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 # This module is just a documentation placeholder
 1;
@@ -63,6 +63,7 @@ POE::Component::Lightspeed - The romping grounds of IKC2
 	);
 
 	--------
+
 	use POE;
 	use POE::Component::Lightspeed::Server;
 
@@ -103,6 +104,10 @@ POE::Component::Lightspeed - The romping grounds of IKC2
 
 =head1 CHANGES
 
+=head2 0.02
+
+	- Documentation cleanups ( I am always a POD newbie )
+
 =head2 0.01
 
 	- Initial release to public :)
@@ -124,9 +129,11 @@ into POE::Kernel, POE::Session, and POE::Resource::Events to get them to recogni
 =head2 DESTINATION SPECIFIER
 
 The IKC destination specifier has been expanded a little, now you can send to multiple kernels/sessions at the same time.
+
 	'poe://kernel1,kernel2/session1,session2/state'
 
 Furthermore, the special character '*' signifies "broadcast"
+
 	'poe://*/session1/state'	->	Every kernel in the network
 	'poe://kernel1/*/state'		-> 	Every session in kernel1 with an alias
 	'poe://kernel1/session1/*'	->	not allowed!
@@ -135,9 +142,11 @@ Furthermore, the special character '*' signifies "broadcast"
 Also, it's possible to pass the specifier as an arrayref or hashref
 
 ARRAYREF:
+
 	[ kernel, session, state ]
 
 HASHREF:
+
 	{
 		'KERNEL'	=>	kernel,
 		'SESSION'	=>	session,
@@ -147,6 +156,7 @@ HASHREF:
 =head2 POST
 
 To post to a remote kernel, there are a few formats allowed.
+
 	$kernel->post( 'poe://kernel/session/state', @args );	# The "Lightspeed" way to do it
 	$kernel->post( $_[SENDER], 'state', @args );		# Will work nicely too
 	$kernel->post( $_[SENDER]->ID, 'state', @args );	# Ditto
@@ -154,6 +164,7 @@ To post to a remote kernel, there are a few formats allowed.
 	$kernel->post( $_[SENDER], $_[CALLER_STATE], @args )	# Yes, Lightspeed supplies this information too!
 
 These ways will fail horrendously:
+
 	$kernel->post( $_[SENDER], @args );			# No, Lightspeed will not automatically send it back to the originating kernel/session/state!
 	$kernel->post( $_[SENDER]->ID, @args );			# Ditto.
 	$kernel->post( $_[SENDER]->ID . 'state', @args );	# This will fail if $_[SENDER] is not a remote kernel, but WILL WORK!
@@ -164,6 +175,7 @@ The concept of a call() cannot be really applied to remote kernels, so you have 
 the resulting data from the call() should go.
 
 To call a remote kernel, there are a few formats allowed.
+
 	$kernel->call( 'poe://kernel/session/state', 'poe://kernel/session/state', @args );	# The "Lightspeed" way to do it
 	$kernel->call( $_[SENDER], 'state', 'poe://kernel/session/state', @args );		# Will work nicely too
 	$kernel->call( $_[SENDER]->ID, 'state', 'poe://kernel/session/state', @args );		# Ditto
@@ -171,6 +183,7 @@ To call a remote kernel, there are a few formats allowed.
 	$kernel->call( $_[SENDER], $_[CALLER_STATE], 'poe://kernel/session/state', @args );	# Yes, Lightspeed supplies this information too!
 
 These ways will fail horrendously:
+
 	$kernel->call( 'poe://kernel/session/state', @args );					# No RSVP specifier here!
 	$kernel->call( $_[SENDER], 'poe://kernel/session/state', @args );			# No remote state!
 	$kernel->call( $_[SENDER]->ID . 'state', 'poe://kernel/session/state', @args );		# This will fail if $_[SENDER] is not a remote kernel, but WILL WORK!
@@ -209,6 +222,10 @@ Being super-friendly as it is, Lightspeed gives the programmer a few extras to m
 	have to supply the session. So, it's very possible to do stuff like $_[SENDER]->ID . 'state' and get the right specifier
 	to supply.
 		'poe://kernel/session/'
+
+	Lightspeed checks the POE Version and matches up the appropriate hackery, so if you have an unsupported version
+	of POE, it won't work because I don't want to totally screw up POE by using the wrong data. If there's a reason you
+	absolutely must have support for POE version X, let me know and I can hack it up.
 
 =head1 GOTCHAS
 

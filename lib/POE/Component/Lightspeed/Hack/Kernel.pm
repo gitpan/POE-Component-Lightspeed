@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = do {my@r=(q$Revision: 1.3 $=~/\d+/g);sprintf"%d."."%04d"x$#r,@r};
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
 
 # Hack the planet!
 package POE::Kernel;
@@ -49,7 +49,7 @@ sub _alias_31 {
 		return 0;
 	}
 
-	# Make sure it doesn't contain any * or /
+	# Make sure it doesn't contain any * or / or ,
 	if ( $name =~ tr|*/,|| ) {
 		$self->_explain_usage( "When Lightspeed is loaded, aliases cannot contain '*' or '/' or ','" );
 		return EINVAL;
@@ -128,8 +128,8 @@ sub _post_31 {
 	} elsif ( ref( $session ) eq 'POE::Component::Lightspeed::Hack::Session' ) {
 		# Convert it :)
 		$session = [];
-		$session->[ POE::Component::Lightspeed::Constants::DEST_KERNEL ] = [ $dest_session->remote_kernel() ];
-		$session->[ POE::Component::Lightspeed::Constants::DEST_SESSION ] = [ $dest_session->remote_session() ];
+		$session->[ POE::Component::Lightspeed::Constants::DEST_KERNEL ] = $dest_session->remote_kernel();
+		$session->[ POE::Component::Lightspeed::Constants::DEST_SESSION ] = $dest_session->remote_session();
 
 		# Sanity checks
 		if ( ref( $event_name ) ) {
@@ -170,6 +170,8 @@ sub _post_31 {
 			(caller)[1,2], ${ $self->[ KR_ACTIVE_EVENT ] }, time(),
 		);
 	}
+
+	# All done!
 	return 1;
 }
 
@@ -311,8 +313,8 @@ sub _call_31 {
 
 		# Convert it!
 		$session = [];
-		$session->[ POE::Component::Lightspeed::Constants::DEST_KERNEL ] = [ $dest_session->remote_kernel() ];
-		$session->[ POE::Component::Lightspeed::Constants::DEST_SESSION ] = [ $dest_session->remote_session() ];
+		$session->[ POE::Component::Lightspeed::Constants::DEST_KERNEL ] = $dest_session->remote_kernel();
+		$session->[ POE::Component::Lightspeed::Constants::DEST_SESSION ] = $dest_session->remote_session();
 		$session->[ POE::Component::Lightspeed::Constants::DEST_STATE ] = $event_name;
 
 		# Send it off!
@@ -415,7 +417,7 @@ sub _lightspeed_call_31 {
 		)
 	);
 
-	$! = 0;
+	# All done!
 	return \@return_value;
 }
 

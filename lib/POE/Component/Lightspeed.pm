@@ -6,11 +6,12 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 # This module is just a documentation placeholder
 1;
 __END__
+
 =head1 NAME
 
 POE::Component::Lightspeed - The romping grounds of IKC2
@@ -104,6 +105,11 @@ POE::Component::Lightspeed - The romping grounds of IKC2
 
 =head1 CHANGES
 
+=head2 0.03	
+
+	- A lot of internal cleanups and tweaks
+	- Added the Introspection module
+
 =head2 0.02
 
 	- Documentation cleanups ( I am always a POD newbie )
@@ -115,7 +121,7 @@ POE::Component::Lightspeed - The romping grounds of IKC2
 =head1 DESCRIPTION
 
 In the Lightspeed world, you have either a server or a client. Obviously, the clients connect to servers. In order
-for Server kernels to connect to other kernels, you can run a client and a server session in the same process.
+for server kernels to connect to other kernels, you can run a client and a server session in the same process.
 
 Please familiarize yourself with the concepts of IKC, especially it's "destination specifier" stuff.
 
@@ -134,9 +140,9 @@ The IKC destination specifier has been expanded a little, now you can send to mu
 
 Furthermore, the special character '*' signifies "broadcast"
 
-	'poe://*/session1/state'	->	Every kernel in the network
+	'poe://*/session1/state'	->	Every kernel in the network ( excludes the current kernel )
 	'poe://kernel1/*/state'		-> 	Every session in kernel1 with an alias
-	'poe://kernel1/session1/*'	->	not allowed!
+	'poe://kernel1/session1/*'	->	Just posts to the state named '*', nothing special here
 	'poe://*/*/state'		->	A whole lot of fun!
 
 Also, it's possible to pass the specifier as an arrayref or hashref
@@ -219,13 +225,15 @@ Being super-friendly as it is, Lightspeed gives the programmer a few extras to m
 				Returns the line number that initiated this request
 
 	The $session->ID method returns the following string. This can be used freely as a session specifier, but you still
-	have to supply the session. So, it's very possible to do stuff like $_[SENDER]->ID . 'state' and get the right specifier
+	have to supply the state. So, it's very possible to do stuff like $_[SENDER]->ID . 'state' and get the right specifier
 	to supply.
 		'poe://kernel/session/'
 
-	Lightspeed checks the POE Version and matches up the appropriate hackery, so if you have an unsupported version
+	Lightspeed checks the POE Version and matches the appropriate hackery, so if you have an unsupported version
 	of POE, it won't work because I don't want to totally screw up POE by using the wrong data. If there's a reason you
 	absolutely must have support for POE version X, let me know and I can hack it up.
+
+	Postbacks/Callbacks work properly with $_[SENDER], even when it is a remote kernel :)
 
 =head1 GOTCHAS
 
@@ -255,12 +263,16 @@ Being super-friendly as it is, Lightspeed gives the programmer a few extras to m
 
 	- The characters '*', '/', and ',' is not allowed in kernel names and session aliases
 
+	- Keep in mind, when you are sending objects, that the appropriate modules are loaded in both the sender + receiver
+
 =head1 KNOWN BUGS / TODO LIST
 
 	- 2 Clients connecting at the same time screws up the routing system, I'm working on it...
 
 	- Argument parsing isn't as strict as it should be, and funky things will be allowed, like:
 		$_[KERNEL]->post( 'poe://kernel1,kernel2,*/session1,session2,*/blah', @args );
+
+	- As of now, Lightspeed will silently drop messages destined towards unknown kernels/sessions
 
 	- Addition of a "monitor" system where you register for callbacks whenever specific things happen:
 		- Client connect/disconnect
@@ -296,6 +308,8 @@ L<POE::TIKC>
 L<POE::Component::Lightspeed::Server>
 
 L<POE::Component::Lightspeed::Client>
+
+L<POE::Component::Lightspeed::Introspection>
 
 =head1 AUTHOR
 

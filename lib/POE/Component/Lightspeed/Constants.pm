@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = do {my@r=(q$Revision: 1.8 $=~/\d+/g);sprintf"%d."."%04d"x$#r,@r};
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
 
 # We export some stuff
 require Exporter;
@@ -21,7 +21,8 @@ our %EXPORT_TAGS = ( 'ALL' => [ qw(
 		ROUTENEW_EDGES
 		LINKDOWN_TO LINKDOWN_FROM
 		CALLREPLY_TO CALLREPLY_FROM CALLREPLY_ARGS
-		ACTION_POST ACTION_CALL ACTION_CALLREPLY ACTION_ROUTENEW ACTION_ROUTEDEL ACTION_HELLO
+		INTROSPECTION_WHAT INTROSPECTION_FROM INTROSPECTION_RSVP INTROSPECTION_ARGS
+		ACTION_POST ACTION_CALL ACTION_CALLREPLY ACTION_ROUTENEW ACTION_ROUTEDEL ACTION_HELLO ACTION_INTROSPECTION
 ) ] );
 Exporter::export_ok_tags( 'ALL' );
 
@@ -59,13 +60,19 @@ sub CALLREPLY_TO	() { POST_TO }
 sub CALLREPLY_FROM	() { POST_FROM }
 sub CALLREPLY_ARGS	() { POST_ARGS }
 
+sub INTROSPECTION_WHAT	() { 0 }
+sub INTROSPECTION_FROM	() { 1 }
+sub INTROSPECTION_RSVP	() { 2 }
+sub INTROSPECTION_ARGS	() { 3 }
+
 # Action constants
-sub ACTION_POST		() { 0 }
-sub ACTION_CALL		() { 1 }
-sub ACTION_CALLREPLY	() { 2 }
-sub ACTION_ROUTENEW	() { 3 }
-sub ACTION_ROUTEDEL	() { 4 }
-sub ACTION_HELLO	() { 5 }
+sub ACTION_POST			() { 0 }
+sub ACTION_CALL			() { 1 }
+sub ACTION_CALLREPLY		() { 2 }
+sub ACTION_ROUTENEW		() { 3 }
+sub ACTION_ROUTEDEL		() { 4 }
+sub ACTION_HELLO		() { 5 }
+sub ACTION_INTROSPECTION	() { 6 }
 
 # End of module
 1;

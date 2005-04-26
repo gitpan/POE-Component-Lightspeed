@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = do {my@r=(q$Revision: 1.3 $=~/\d+/g);sprintf"%d."."%04d"x$#r,@r};
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
 
 # These methods are folded into POE::Kernel;
 package POE::Kernel;

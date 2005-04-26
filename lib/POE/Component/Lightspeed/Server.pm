@@ -6,7 +6,15 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.02';
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
+
+# Set some constants
+BEGIN {
+	# Debug fun!
+	if ( ! defined &DEBUG ) {
+		eval "sub DEBUG () { 0 }";
+	}
+}
 
 # Import what we need
 use Carp qw( croak );
@@ -21,15 +29,8 @@ use POE::Filter::Reference;
 use POE::Component::Lightspeed::Router;
 use POE::Component::Lightspeed::Constants qw( MSG_TIMESTAMP MSG_ACTION );
 
-# Set some constants
-BEGIN {
-	# Debug fun!
-	if ( ! defined &DEBUG ) {
-		eval "sub DEBUG () { 0 }";
-	} elsif ( DEBUG ) {
-		require Data::Dumper;
-	}
-}
+# Spawn the Router session
+POE::Component::Lightspeed::Router->spawn();
 
 # Spawns an instance of the server
 sub spawn {
@@ -152,17 +153,35 @@ sub spawn {
 		},
 	) or die 'Unable to create a new session!';
 
-	# Spawn the Router session
-	POE::Component::Lightspeed::Router->spawn();
-
 	# Return success
 	return 1;
 }
 
 # Starts listening for other lightspeed connections
 sub StartServer {
-	# Set the alias
-	$_[KERNEL]->alias_set( $_[HEAP]->{'ALIAS'} );
+	# Okay, can we take the alias?
+	if ( ! $_[KERNEL]->_resolve_session( $_[HEAP]->{'ALIAS'} ) ) {
+		# Set it!
+		$_[KERNEL]->alias_set( $_[HEAP]->{'ALIAS'} );
+	} else {
+		# Loop over fake numbers
+		my $num = 0;
+		while ( ++$num ) {
+			if ( ! $_[KERNEL]->_resolve_session( $_[HEAP]->{'ALIAS'} . '_' . $num ) ) {
+				# Set this as our new alias
+				$_[HEAP]->{'ALIAS'} = $_[HEAP]->{'ALIAS'} . '_' . $num;
+
+				# Debug stuff
+				if ( DEBUG ) {
+					warn "Finally found an alias to use -> " . $_[HEAP]->{'ALIAS'};
+				}
+				
+				# Actually set it!
+				$_[KERNEL]->alias_set( $_[HEAP]->{'ALIAS'} );
+				last;
+			}
+		}
+	}
 
 	# Okay, time to create the server!
 	$_[HEAP]->{'SF'} = POE::Wheel::SocketFactory->new(

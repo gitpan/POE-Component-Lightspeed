@@ -1,4 +1,4 @@
-POE-Component-Lightspeed version 0.01
+POE-Component-Lightspeed version 0.03
 =====================================
 
 This is the romping grounds of IKC2
@@ -18,6 +18,9 @@ This module requires these other modules and libraries:
 
 	POE
 	Graph
+	Carp
+	Time::HiRes
+	Socket
 
 COPYRIGHT AND LICENCE
 

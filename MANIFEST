@@ -8,6 +8,7 @@ lib/POE/Component/Lightspeed/Server.pm
 lib/POE/Component/Lightspeed/Client.pm
 lib/POE/Component/Lightspeed/Constants.pm
 lib/POE/Component/Lightspeed/Introspection.pm
+lib/POE/Component/Lightspeed/Authentication.pm
 lib/POE/Component/Lightspeed/Hack/Session.pm
 lib/POE/Component/Lightspeed/Hack/Kernel.pm
 lib/POE/Component/Lightspeed/Hack/Events.pm

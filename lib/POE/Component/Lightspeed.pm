@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
 # This module is just a documentation placeholder
 1;
@@ -105,7 +105,16 @@ POE::Component::Lightspeed - The romping grounds of IKC2
 
 =head1 CHANGES
 
-=head2 0.03	
+=head2 0.04
+
+	- Added SSL to server/client connections
+	- Added passwords to server/client connections
+	- Fixed the long-standing bug of concurrent client connections causing errors
+	- Documentation tweaks, as usual
+	- Added the AUTHCLIENT parameter to Lightspeed::Server as a hook for accepting connections
+	- Added Lightspeed::Authentication to have authentication hooks on the local kernel
+
+=head2 0.03
 
 	- A lot of internal cleanups and tweaks
 	- Added the Introspection module
@@ -267,8 +276,6 @@ Being super-friendly as it is, Lightspeed gives the programmer a few extras to m
 
 =head1 KNOWN BUGS / TODO LIST
 
-	- 2 Clients connecting at the same time screws up the routing system, I'm working on it...
-
 	- Argument parsing isn't as strict as it should be, and funky things will be allowed, like:
 		$_[KERNEL]->post( 'poe://kernel1,kernel2,*/session1,session2,*/blah', @args );
 
@@ -278,12 +285,6 @@ Being super-friendly as it is, Lightspeed gives the programmer a few extras to m
 		- Client connect/disconnect
 		- Messages leaving/arriving their destinations
 		- General debugging junk
-
-	- Addition of an "authentication" system to filter incoming messages
-		- Allow post/call from specific kernels/sessions/states
-		- Refuse clients meeting certain criteria
-
-	- Adding SSL to the whole picture
 
 	- Adding the local ip/port to bind to for clients
 
@@ -310,6 +311,8 @@ L<POE::Component::Lightspeed::Server>
 L<POE::Component::Lightspeed::Client>
 
 L<POE::Component::Lightspeed::Introspection>
+
+L<POE::Component::Lightspeed::Authentication>
 
 =head1 AUTHOR
 

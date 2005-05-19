@@ -6,15 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
-
-# Set some constants
-BEGIN {
-	# Debug fun!
-	if ( ! defined &DEBUG ) {
-		eval "sub DEBUG () { 0 }";
-	}
-}
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1078 $))[1] );
 
 # Import what we need
 use Carp qw( croak );
@@ -27,6 +19,14 @@ use POE::Filter::Line;
 use POE::Filter::Reference;
 use POE::Component::Lightspeed::Router;
 use POE::Component::Lightspeed::Constants qw( MSG_TIMESTAMP MSG_ACTION );
+
+# Set some constants
+BEGIN {
+	# Debug fun!
+	if ( ! defined &DEBUG ) {
+		eval "sub DEBUG () { 0 }";
+	}
+}
 
 # Spawn the Router session
 POE::Component::Lightspeed::Router->spawn();
@@ -45,7 +45,7 @@ sub spawn {
 	my %opt = @_;
 
 	# Our own options
-	my ( $ALIAS, $KERNEL, $ADDRESS, $PORT, $SERIALIZERS, $COMPRESSION );
+	my ( $ALIAS, $KERNEL, $ADDRESS, $PORT, $SERIALIZERS, $COMPRESSION, $USESSL, $PASSWORD );
 
 	# Get the session alias
 	if ( exists $opt{'ALIAS'} and defined $opt{'ALIAS'} and length( $opt{'ALIAS'} ) ) {
@@ -141,6 +141,53 @@ sub spawn {
 		}
 	}
 
+	# Get the USESSL
+	if ( exists $opt{'USESSL'} and defined $opt{'USESSL'} and length( $opt{'USESSL'} ) ) {
+		$USESSL = delete $opt{'USESSL'};
+
+		# Check if we want it
+		if ( $USESSL ) {
+			eval {
+				use POE::Component::SSLify qw( Client_SSLify );
+			};
+
+			# Error-checking
+			if ( $@ ) {
+				warn "Unable to load SSLify: $@";
+				$USESSL = 0;
+			}
+		}
+	} else {
+		# Debugging info...
+		if ( DEBUG ) {
+			warn 'Using default USESSL = false';
+		}
+
+		# Set the default
+		$USESSL = 0;
+
+		if ( exists $opt{'USESSL'} ) {
+			delete $opt{'USESSL'};
+		}
+	}
+
+	# Get the PASSWORD
+	if ( exists $opt{'PASSWORD'} and defined $opt{'PASSWORD'} and length( $opt{'PASSWORD'} ) ) {
+		$PASSWORD = delete $opt{'PASSWORD'};
+	} else {
+		# Debugging info...
+		if ( DEBUG ) {
+			warn 'Using default PASSWORD = undef';
+		}
+
+		# Set the default
+		$PASSWORD = undef;
+
+		if ( exists $opt{'PASSWORD'} ) {
+			delete $opt{'PASSWORD'};
+		}
+	}
+
 	# Create the POE Session!
 	POE::Session->create(
 		'inline_states'	=>	{
@@ -190,6 +237,8 @@ sub spawn {
 			'SERVER_KERNEL'	=>	undef,
 			'SERIALIZER'	=>	$SERIALIZERS,
 			'COMPRESSION'	=>	$COMPRESSION,
+			'USESSL'	=>	$USESSL,
+			'PASSWORD'	=>	$PASSWORD,
 		},
 	) or die 'Unable to create a new session!';
 
@@ -215,7 +264,7 @@ sub StartClient {
 				if ( DEBUG ) {
 					warn "Finally found an alias to use -> " . $_[HEAP]->{'ALIAS'};
 				}
-				
+
 				# Actually set it!
 				$_[KERNEL]->alias_set( $_[HEAP]->{'ALIAS'} );
 				last;
@@ -250,8 +299,8 @@ sub StopClient {
 	}
 
 	# Remove any wheels
-	delete $_[HEAP]->{'SF'};
-	delete $_[HEAP]->{'RW'};
+	undef $_[HEAP]->{'SF'};
+	undef $_[HEAP]->{'RW'};
 
 	# All done!
 	return 1;
@@ -275,6 +324,24 @@ sub Create_SocketFactory {
 sub GotConnection {
 	# ARG0 = Socket, ARG1 = Remote Address, ARG2 = Remote Port, ARG3 = wheelid
 	my $socket = $_[ARG0];
+
+	# Get rid of the SocketFactory
+	undef $_[HEAP]->{'SF'};
+
+	# Should we use SSL?
+	if ( $_[HEAP]->{'USESSL'} ) {
+		eval { $socket = Client_SSLify( $socket ); };
+
+		# Error Checking
+		if ( $@ ) {
+			if ( DEBUG ) {
+				warn "Unable to turn socket into SSL -> $@";
+			}
+			
+			# Shutdown!
+			$_[KERNEL]->call( $_[SESSION], 'shutdown' );
+		}
+	}
 
 	# Set up the Wheel to read from the socket
 	my $wheel = POE::Wheel::ReadWrite->new(
@@ -361,10 +428,10 @@ sub InputLine {
 	return if $line eq '';
 
 	# Did we get an error?
-	if ( $line eq 'ERROR' ) {
+	if ( $line =~ /^ERROR/ ) {
 		# Aw, dang!
 		if ( DEBUG ) {
-			warn "Got ERROR from server in the $_[HEAP]->{'PHASE'} phase";
+			warn "Got ERROR from server in the $_[HEAP]->{'PHASE'} phase -> $line";
 		}
 
 		# Get rid of ourself...
@@ -377,12 +444,42 @@ sub InputLine {
 		# Should be the welcome line
 		if ( $line =~ /^SERVER\s+Lightspeed\s+v\/(.*)\s+kernel\s+(.*)$/ ) {
 			# Okay, this server talks lightspeed :)
-			$_[HEAP]->{'PHASE'} = 'compression';
 			$_[HEAP]->{'SERVER_VER'} = $1;
 			$_[HEAP]->{'SERVER_KERNEL'} = $2;
 
 			# Send the client stuff
 			$_[HEAP]->{'RW'}->put( 'CLIENT Lightspeed v/' . $VERSION . ' kernel ' . $_[HEAP]->{'MYKERNEL'} );
+
+			# Do we have a password?
+			if ( defined $_[HEAP]->{'PASSWORD'} ) {
+				$_[HEAP]->{'PHASE'} = 'password';
+
+				# Send it off!
+				$_[HEAP]->{'RW'}->put( 'PASSWORD ' . $_[HEAP]->{'PASSWORD'} );
+			} else {
+				$_[HEAP]->{'PHASE'} = 'compression';
+
+				# Do we want compression?
+				if ( $_[HEAP]->{'COMPRESSION'} ) {
+					$_[HEAP]->{'RW'}->put( 'COMPRESSION ON' );
+				} else {
+					$_[HEAP]->{'RW'}->put( 'COMPRESSION OFF' );
+				}
+			}
+		} else {
+			# Doesn't talk lightspeed?
+			if ( DEBUG ) {
+				warn "Server doesn't talk Lightspeed -> input was: $line";
+			}
+
+			# Shutdown!
+			$_[KERNEL]->call( $_[SESSION], 'shutdown' );
+		}
+	} elsif ( $_[HEAP]->{'PHASE'} eq 'password' ) {
+		# Should be the password line
+		if ( $line eq 'PASSWORD OK' ) {
+			# Move on to the next phase
+			$_[HEAP]->{'PHASE'} = 'compression';
 
 			# Do we want compression?
 			if ( $_[HEAP]->{'COMPRESSION'} ) {
@@ -398,7 +495,6 @@ sub InputLine {
 
 			# Shutdown!
 			$_[KERNEL]->call( $_[SESSION], 'shutdown' );
-			return undef;
 		}
 	} elsif ( $_[HEAP]->{'PHASE'} eq 'compression' ) {
 		# Should be the compress line
@@ -410,30 +506,31 @@ sub InputLine {
 
 			# Shutdown!
 			$_[KERNEL]->call( $_[SESSION], 'shutdown' );
-			return undef;
-		}
-
-		# Move on to the next phase
-		$_[HEAP]->{'PHASE'} = 'serializer';
-
-		# Send the serializer line
-		if ( _Get_NextSerializer( $_[HEAP] ) ) {
-			$_[HEAP]->{'RW'}->put( 'SERIALIZER ' . $_[HEAP]->{'FILTER'}->[0] );
 		} else {
-			# Found no serializer, abort
-			if ( DEBUG ) {
-				warn "Exhausted our serializer options, no choice but to shut down";
-			}
+			# Move on to the next phase
+			$_[HEAP]->{'PHASE'} = 'serializer';
 
-			# Shutdown!
-			$_[KERNEL]->call( $_[SESSION], 'shutdown' );
-			return undef;
+			# Send the serializer line
+			if ( _Get_NextSerializer( $_[HEAP] ) ) {
+				$_[HEAP]->{'RW'}->put( 'SERIALIZER ' . $_[HEAP]->{'FILTER'}->[0] );
+			} else {
+				# Found no serializer, abort
+				if ( DEBUG ) {
+					warn "Exhausted our serializer options, no choice but to shut down";
+				}
+
+				# Shutdown!
+				$_[KERNEL]->call( $_[SESSION], 'shutdown' );
+			}
 		}
 	} elsif ( $_[HEAP]->{'PHASE'} eq 'serializer' ) {
 		# Should be the serializer line
 		if ( $line eq 'SERIALIZER OK' ) {
 			# Yay, we are all done...
 			$_[HEAP]->{'RW'}->put( 'DONE' );
+			
+			# We are connected!
+			$_[HEAP]->{'PHASE'} = 'connected';
 
 			# Change the filter
 			$_[HEAP]->{'RW'}->set_filter( $_[HEAP]->{'FILTER'}->[1] );
@@ -453,7 +550,6 @@ sub InputLine {
 
 				# Shutdown!
 				$_[KERNEL]->call( $_[SESSION], 'shutdown' );
-				return undef;
 			}
 		}
 	}
@@ -495,7 +591,9 @@ sub RWError {
 	undef $_[HEAP]->{'RW'};
 
 	# Let the router know the link is down
-	$_[KERNEL]->call( $POE::Component::Lightspeed::Router::SES_ALIAS, 'link_down', $wheel_id );
+	if ( $_[HEAP]->{'PHASE'} eq 'connected' ) {
+		$_[KERNEL]->call( $POE::Component::Lightspeed::Router::SES_ALIAS, 'link_down', $wheel_id );
+	}
 
 	# Shutdown ourself
 	$_[KERNEL]->yield( 'shutdown' );
@@ -564,16 +662,6 @@ POE::Component::Lightspeed::Client - Connects to Lightspeed servers
 
 	The Lightspeed Client session
 
-=head1 CHANGES
-
-=head2 0.02
-
-	- Documentation tweaks
-
-=head2 0.01
-
-	- Initial Revision
-
 =head1 DESCRIPTION
 
 This module connects to remote Lightspeed servers. Usage is exactly the same as described in the Lightspeed documentation.
@@ -593,7 +681,7 @@ To start the client, just call it's spawn method:
 
 This method will return undef on error or return success.
 
-This constructor accepts only 6 options.
+This constructor accepts only 8 options.
 
 =over 4
 
@@ -633,6 +721,18 @@ This will default to:
 This is the boolean option passed to POE::Filter::Reference
 
 This will default to false ( 0 )
+
+=item C<USESSL>
+
+This is a boolean option whether to turn on SSL encryption for the link.
+
+This will default to false ( 0 )
+
+=item C<PASSWORD>
+
+The password for the server, if it requires one.
+
+This will default to nothing.
 
 =back
 

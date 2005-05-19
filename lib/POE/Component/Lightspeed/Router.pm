@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1049 $))[1] );
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1080 $))[1] );
 
 # Set some constants
 BEGIN {
@@ -113,6 +113,12 @@ sub spawn {
 			# Our graph object
 			'GRAPH'		=>	$graph,
 			'APSP'		=>	$graph->APSP_Floyd_Warshall,
+
+			# Authentication stuff
+			'AUTH'		=>	{},
+
+			# Monitor stuff
+			'MONITOR'	=>	{},
 		},
 	) or die 'Unable to create a new session!';
 
@@ -490,14 +496,27 @@ sub Link_Down {
 	$_[HEAP]->{'SID_WID'}->{ $ses } = [ grep { $_ ne $id } @{ $_[HEAP]->{'SID_WID'}->{ $ses } } ];
 	delete $_[HEAP]->{'WID_SID'}->{ $id };
 	delete $_[HEAP]->{'SID_WID'}->{ $ses } if scalar( @{ $_[HEAP]->{'SID_WID'}->{ $ses } } ) == 0;
+	
+	# Delete this edge from our graph
+	$_[HEAP]->{'GRAPH'}->delete_edge( $_[HEAP]->{'MYKERNEL'}, $kernel );
 
-	# Let ACTION_ROUTEDEL do some work
-	$_[KERNEL]->call( $_[SESSION], 'ACTION_' . ACTION_ROUTEDEL, [
-		$_[HEAP]->{'MYKERNEL'},			# MSG_TO
-		undef,					# MSG_FROM
-		undef,					# MSG_ACTION
-		[ $_[HEAP]->{'MYKERNEL'}, $kernel ],	# MSG_DATA
-	] );
+	# Update the APSP
+	$_[HEAP]->{'APSP'} = $_[HEAP]->{'GRAPH'}->APSP_Floyd_Warshall;
+
+	# Are any kernels isolated now ( no way to reach them )
+	foreach my $node ( $_[HEAP]->{'GRAPH'}->vertices ) {
+		if ( $node eq $_[HEAP]->{'MYKERNEL'} ) {
+			next;
+		}
+
+		if ( ! $_[HEAP]->{'APSP'}->is_reachable( $_[HEAP]->{'MYKERNEL'}, $node ) ) {
+			# This kernel is isolated, delete it
+			$_[HEAP]->{'GRAPH'}->delete_vertex( $node );
+
+			# Update the APSP
+			$_[HEAP]->{'APSP'} = $_[HEAP]->{'GRAPH'}->APSP_Floyd_Warshall;
+		}
+	}
 
 	# Remove it from the wheel mapping
 	delete $_[HEAP]->{'KERNEL_WID'}->{ $kernel };
@@ -616,6 +635,29 @@ sub A_ROUTE_NEW {
 		$_[HEAP]->{'APSP'} = $_[HEAP]->{'GRAPH'}->APSP_Floyd_Warshall;
 	}
 
+#	# Find LINK-MISS hits
+#	foreach my $link ( $_[HEAP]->{'GRAPH'}->vertices() ) {
+#		# Skip the sender and ourself
+#		if ( $link eq $_[HEAP]->{'MYKERNEL'} or $link eq $msg->[ MSG_FROM ] ) { next }
+#
+#		# Find it in the REALTO
+#		if ( ( ! ref( $msg->[ MSG_REALTO ] ) and $msg->[ MSG_REALTO ] ne $link ) or ! Array_Search( $msg->[ MSG_REALTO ], $link ) ) {
+#			# Add this link to the message
+#			if ( ! ref( $msg->[ MSG_TO ] ) ) {
+#				$msg->[ MSG_TO ] = [ $msg->[ MSG_TO ], $link ];
+#			} else {
+#				push( @{ $msg->[ MSG_TO ] }, $link );
+#			}
+#
+#			# Add it to the REALTO too
+#			if ( ! ref( $msg->[ MSG_REALTO ] ) ) {
+#				$msg->[ MSG_REALTO ] = [ $msg->[ MSG_REALTO ], $link ];
+#			} else {
+#				push( @{ $msg->[ MSG_REALTO ] }, $link );
+#			}
+#		}
+#	}
+
 	# Do whatever is necessary with this packet
 	SendMessage( $_[HEAP], $msg );
 
@@ -663,6 +705,29 @@ sub A_ROUTE_DEL {
 		}
 	}
 
+#	# Find LINK-MISS hits
+#	foreach my $link ( $_[HEAP]->{'GRAPH'}->vertices() ) {
+#		# Skip the sender and ourself
+#		if ( $link eq $_[HEAP]->{'MYKERNEL'} or $link eq $msg->[ MSG_FROM ] ) { next }
+#
+#		# Find it in the REALTO
+#		if ( ( ! ref( $msg->[ MSG_REALTO ] ) and $msg->[ MSG_REALTO ] ne $link ) or ! Array_Search( $msg->[ MSG_REALTO ], $link ) ) {
+#			# Add this link to the message
+#			if ( ! ref( $msg->[ MSG_TO ] ) ) {
+#				$msg->[ MSG_TO ] = [ $msg->[ MSG_TO ], $link ];
+#			} else {
+#				push( @{ $msg->[ MSG_TO ] }, $link );
+#			}
+#
+#			# Add it to the REALTO too
+#			if ( ! ref( $msg->[ MSG_REALTO ] ) ) {
+#				$msg->[ MSG_REALTO ] = [ $msg->[ MSG_REALTO ], $link ];
+#			} else {
+#				push( @{ $msg->[ MSG_REALTO ] }, $link );
+#			}
+#		}
+#	}
+
 	# Do whatever is necessary with this packet
 	SendMessage( $_[HEAP], $msg );
 
@@ -677,13 +742,54 @@ sub A_POST {
 
 	# Is it for us?
 	if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_TO ] ) ) {
-		# Send it off!
-		post_self(
-			$_[HEAP],
-			POE::Component::Lightspeed::Hack::Session->new( @{ $msg->[ MSG_DATA ]->[ POST_FROM ] } ),
-			$msg->[ MSG_DATA ]->[ POST_TO ],
-			$msg->[ MSG_DATA ]->[ POST_ARGS ],
-		);
+		# Create the fake session
+		my $fake_session = POE::Component::Lightspeed::Hack::Session->new( @{ $msg->[ MSG_DATA ]->[ POST_FROM ] } );
+
+		# Determine the type
+		my $type;
+		if ( $_[STATE] eq 'ACTION_0' ) {
+			$type = 'post';
+		} else {
+			$type = 'callreply';
+		}
+
+		# Short-circuit all our AUTH crap
+		if ( ! exists $_[HEAP]->{'AUTH'}->{ $type } ) {
+			# Okay, send it!
+			post_self(
+				$_[HEAP],
+				$fake_session,
+				$msg->[ MSG_DATA ]->[ POST_TO ],
+				$msg->[ MSG_DATA ]->[ POST_ARGS ],
+			);
+		} else {
+			# Find out the sessions
+			my @sessions = ();
+			if ( ! ref( $msg->[ MSG_DATA ]->[ POST_TO ]->[ DEST_SESSION ] ) ) {
+				push( @sessions, $msg->[ MSG_DATA ]->[ POST_TO ]->[ DEST_SESSION ] );
+			} else {
+				push( @sessions, @{ $msg->[ MSG_DATA ]->[ POST_TO ]->[ DEST_SESSION ] } );
+			}
+
+			# Loop over the sessions
+			foreach my $ses ( @sessions ) {
+				# Authenticate it!
+				if ( Authenticate( $_[HEAP], $type, $ses, $msg->[ MSG_DATA ]->[ POST_TO ]->[ DEST_STATE ], undef, $fake_session ) ) {
+					# Okay, send it!
+					post_self(
+						$_[HEAP],
+						$fake_session,
+						[ $_[HEAP]->{'MYKERNEL'}, $ses, $msg->[ MSG_DATA ]->[ POST_TO ]->[ DEST_STATE ] ],
+						$msg->[ MSG_DATA ]->[ POST_ARGS ],
+					);
+				} else {
+					# Hook returned false, drop it
+					if ( DEBUG ) {
+						warn "Authentication hook returned false, not sending to session $ses";
+					}
+				}
+			}
+		}
 	}
 
 	# Do whatever is necessary with this packet
@@ -697,7 +803,7 @@ sub A_POST {
 sub A_CALL {
 	# ARG0 = data packet, ARG1 = wheel id
 	my $msg = $_[ARG0];
-#warn "CALL - packet:", Data::Dumper::Dumper( $msg );
+
 	# Is it for us?
 	if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_TO ] ) ) {
 		# Create the fake session
@@ -733,31 +839,39 @@ sub A_CALL {
 				next;
 			}
 
-			# Call it!
-			my $args = $_[KERNEL]->lightspeed_fake_call(
-				$fake_session,
-				$sesreal,
-				$msg->[ MSG_DATA ]->[ CALL_TO ]->[ DEST_STATE ],
-				$msg->[ MSG_DATA ]->[ CALL_ARGS ],
-			);
+			# Authenticate or move on
+			if ( ! exists $_[HEAP]->{'AUTH'}->{'call'} or Authenticate( $_[HEAP], 'call', $ses, $msg->[ MSG_DATA ]->[ CALL_TO ]->[ DEST_STATE ], $msg->[ MSG_DATA ]->[ CALL_RSVP ], $fake_session ) ) {
+				# Call it!
+				my $args = $_[KERNEL]->lightspeed_fake_call(
+					$fake_session,
+					$sesreal,
+					$msg->[ MSG_DATA ]->[ CALL_TO ]->[ DEST_STATE ],
+					$msg->[ MSG_DATA ]->[ CALL_ARGS ],
+				);
 
-			# Return it back to the RSVP
-			SendMessage( $_[HEAP], [
-				$msg->[ MSG_DATA ]->[ CALL_RSVP ]->[ DEST_KERNEL ],		# MSG_TO
-				undef,								# MSG_FROM
-				ACTION_CALLREPLY,						# MSG_ACTION
-				[								# MSG_DATA
-					$msg->[ MSG_DATA ]->[ CALL_RSVP ],			# CALLREPLY_TO
-					[							# CALLREPLY_FROM
-						$_[HEAP]->{'MYKERNEL'},				# FROM_KERNEL
-						$ses,						# FROM_SESSION
-						$msg->[ MSG_DATA ]->[ CALL_TO ]->[ DEST_STATE ],# FROM_STATE
-						'Lightspeed.pm',				# FROM_FILE
-						1,						# FROM_LINE
+				# Return it back to the RSVP
+				SendMessage( $_[HEAP], [
+					$msg->[ MSG_DATA ]->[ CALL_RSVP ]->[ DEST_KERNEL ],		# MSG_TO
+					undef,								# MSG_FROM
+					ACTION_CALLREPLY,						# MSG_ACTION
+					[								# MSG_DATA
+						$msg->[ MSG_DATA ]->[ CALL_RSVP ],			# CALLREPLY_TO
+						[							# CALLREPLY_FROM
+							$_[HEAP]->{'MYKERNEL'},				# FROM_KERNEL
+							$ses,						# FROM_SESSION
+							$msg->[ MSG_DATA ]->[ CALL_TO ]->[ DEST_STATE ],# FROM_STATE
+							'Lightspeed.pm',				# FROM_FILE
+							1,						# FROM_LINE
+						],
+						$args,							# CALLREPLY_ARGS
 					],
-					$args,							# CALLREPLY_ARGS
-				],
-			] );
+				] );
+			} else {
+				# Failed authentication
+				if ( DEBUG ) {
+					warn "Authentication hook returned false, not sending to session $ses";
+				}
+			}
 		}
 	}
 
@@ -775,97 +889,110 @@ sub A_INTROSPECTION {
 
 	# Is it for us?
 	if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_TO ] ) ) {
+		# Create the fake session
+		my $fake_session = POE::Component::Lightspeed::Hack::Session->new( @{ $msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ] } );
+
 		# Okay, is it a SESSION or STATE request?
 		if ( $msg->[ MSG_DATA ]->[ INTROSPECTION_WHAT ] eq 'SESSION' ) {
-			# Get the list of sessions and send it back!
-			my @sessions = GetSessions();
+			# Authenticate or move on
+			if ( ! exists $_[HEAP]->{'AUTH'}->{'introspection'} or Authenticate( $_[HEAP], 'introspection', 'session', undef, $msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ], $fake_session ) ) {
+				# Get the list of sessions and send it back!
+				my @sessions = GetSessions();
 
-			# Now, is the rsvp towards ourself?
-			if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ] ) ) {
-				# Create the fake session
-				my $fake_session = POE::Component::Lightspeed::Hack::Session->new( @{ $msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ] } );
-
-				# Send it to ourself...
-				post_self(
-					$_[HEAP],
-					$fake_session,
-					$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],
-					[ $_[HEAP]->{'MYKERNEL'}, \@sessions ],
-				);
-			}
-
-			# Send it back to the RSVP!
-			SendMessage( $_[HEAP], [
-				$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ],	# MSG_TO
-				undef,								# MSG_FROM
-				ACTION_POST,							# MSG_ACTION
-				[								# MSG_DATA
-					$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],		# POST_TO
-					$msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ],		# POST_FROM
-					[ $_[HEAP]->{'MYKERNEL'}, \@sessions ],			# POST_ARGS
-				],
-			] );
-		} elsif ( $msg->[ MSG_DATA ]->[ INTROSPECTION_WHAT ] eq 'STATE' ) {
-			# Loop through the sessions
-			my %data = ();
-			my @sessions = ();
-
-			# Is it the special '*' session flag?
-			if ( ! ref( $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ] ) ) {
-				if ( $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ] eq '*' ) {
-					@sessions = GetSessions();
-				} else {
-					$sessions[0] = $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ];
+				# Now, is the rsvp towards ourself?
+				if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ] ) ) {
+					# Send it to ourself...
+					post_self(
+						$_[HEAP],
+						$fake_session,
+						$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],
+						[ $_[HEAP]->{'MYKERNEL'}, \@sessions ],
+					);
 				}
+
+				# Send it back to the RSVP!
+				SendMessage( $_[HEAP], [
+					$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ],	# MSG_TO
+					undef,								# MSG_FROM
+					ACTION_POST,							# MSG_ACTION
+					[								# MSG_DATA
+						$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],		# POST_TO
+						$msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ],		# POST_FROM
+						[ $_[HEAP]->{'MYKERNEL'}, \@sessions ],			# POST_ARGS
+					],
+				] );
 			} else {
-				@sessions = @{ $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ] };
-			}
-
-			foreach my $ses ( @sessions ) {
-				# Check if it's a multiple-alias session
-				if ( ref( $ses ) ) {
-					$ses = $ses->[0];
+				# Failed Authentication
+				if ( DEBUG ) {
+					warn "Authentication hook returned false, not doing introspection of sessions";
 				}
+			}
+		} elsif ( $msg->[ MSG_DATA ]->[ INTROSPECTION_WHAT ] eq 'STATE' ) {
+			# Authenticate or move on
+			if ( ! exists $_[HEAP]->{'AUTH'}->{'introspection'} or Authenticate( $_[HEAP], 'introspection', 'state', $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ], $msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ], $fake_session ) ) {
+				# Loop through the sessions
+				my %data = ();
+				my @sessions = ();
 
-				# Is it a valid session?
-				my $sesreal = $_[KERNEL]->_resolve_session( $ses );
-				if ( ! defined $sesreal ) {
-					# Error...
-					if ( DEBUG ) {
-						warn "Unknown session: $ses";
+				# Is it the special '*' session flag?
+				if ( ! ref( $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ] ) ) {
+					if ( $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ] eq '*' ) {
+						@sessions = GetSessions();
+					} else {
+						$sessions[0] = $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ];
 					}
-					next;
+				} else {
+					@sessions = @{ $msg->[ MSG_DATA ]->[ INTROSPECTION_ARGS ] };
 				}
 
-				# Okay, we have the session reference, HAX0R TIME!
-				$data{ $ses } = [ keys %{ $sesreal->[ POE::Session::SE_STATES ] } ];
+				foreach my $ses ( @sessions ) {
+					# Check if it's a multiple-alias session
+					if ( ref( $ses ) ) {
+						$ses = $ses->[0];
+					}
+
+					# Is it a valid session?
+					my $sesreal = $_[KERNEL]->_resolve_session( $ses );
+					if ( ! defined $sesreal ) {
+						# Error...
+						if ( DEBUG ) {
+							warn "Unknown session: $ses";
+						}
+						next;
+					}
+
+					# Okay, we have the session reference, HAX0R TIME!
+					$data{ $ses } = [ keys %{ $sesreal->[ POE::Session::SE_STATES ] } ];
+				}
+
+				# Now, is the rsvp towards ourself?
+				if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ] ) ) {
+					# Send it to ourself...
+					post_self(
+						$_[HEAP],
+						$fake_session,
+						$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],
+						[ $_[HEAP]->{'MYKERNEL'}, \%data ],
+					);
+				}
+
+				# Send it back to the RSVP!
+				SendMessage( $_[HEAP], [
+					$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ],	# MSG_TO
+					undef,								# MSG_FROM
+					ACTION_POST,							# MSG_ACTION
+					[								# MSG_DATA
+						$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],		# POST_TO
+						$msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ],		# POST_FROM
+						[ $_[HEAP]->{'MYKERNEL'}, \%data ],			# POST_ARGS
+					],
+				] );
+			} else {
+				# Failed Authentication
+				if ( DEBUG ) {
+					warn "Authentication hook returned false, not doing introspection of states";
+				}
 			}
-
-			# Now, is the rsvp towards ourself?
-			if ( FindOurself( $_[HEAP]->{'MYKERNEL'}, $msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ] ) ) {
-				# Create the fake session
-				my $fake_session = POE::Component::Lightspeed::Hack::Session->new( @{ $msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ] } );
-
-				# Send it to ourself...
-				post_self(
-					$_[HEAP],
-					$fake_session,
-					$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],
-					[ $_[HEAP]->{'MYKERNEL'}, \%data ],
-				);
-			}
-
-			# Send it back to the RSVP!
-			SendMessage( $_[HEAP], [
-				$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ]->[ DEST_KERNEL ],	# MSG_TO
-				undef,								# MSG_FROM
-				ACTION_POST,							# MSG_ACTION
-				[								# MSG_DATA
-					$msg->[ MSG_DATA ]->[ INTROSPECTION_RSVP ],		# POST_TO
-					$msg->[ MSG_DATA ]->[ INTROSPECTION_FROM ],		# POST_FROM
-					[ $_[HEAP]->{'MYKERNEL'}, \%data ],			# POST_ARGS
-				],
-			] );
 		} else {
 			# Unknown request!
 			if ( DEBUG ) {
@@ -876,6 +1003,59 @@ sub A_INTROSPECTION {
 
 	# Do whatever is necessary with this packet
 	SendMessage( $_[HEAP], $msg );
+
+	# All done!
+	return 1;
+}
+
+# Subroutine to authenticate whatever we can
+sub Authenticate {
+	my( $heap, $type, $ses, $arg, $rsvp, $fake_session ) = @_;
+
+	# Check if there's a hook
+	if ( exists $heap->{'AUTH'}->{ $type } ) {
+		# Check again
+		if ( exists $heap->{'AUTH'}->{ $type }->{ $ses } ) {
+			# post/callreply messages do not have RSVP
+			if ( $type eq 'post' or $type eq 'callreply' ) {
+				if ( $heap->{'AUTH'}->{ $type }->{ $ses }->( $type, $ses, $arg, $fake_session ) ) {
+					return 1;
+				} else {
+					return undef;
+				}
+			} else {
+				if ( $heap->{'AUTH'}->{ $type }->{ $ses }->( $type, $ses, $arg, $rsvp, $fake_session ) ) {
+					return 1;
+				} else {
+					return undef;
+				}
+			}
+		} else {
+			# Try the catch-all hook
+			if ( exists $heap->{'AUTH'}->{ $type }->{'*'} ) {
+				# post/callreply messages do not have RSVP
+				if ( $type eq 'post' or $type eq 'callreply' ) {
+					if ( $heap->{'AUTH'}->{ $type }->{'*'}->( $type, $ses, $arg, $fake_session ) ) {
+						return 1;
+					} else {
+						return undef;
+					}
+				} else {
+					if ( $heap->{'AUTH'}->{ $type }->{'*'}->( $type, $ses, $arg, $rsvp, $fake_session ) ) {
+						return 1;
+					} else {
+						return undef;
+					}
+				}
+			} else {
+				# No hook available
+				return 1;
+			}
+		}
+	} else {
+		# No hook available
+		return 1;
+	}
 }
 
 # Helper sub to get the list of sessions with aliases
@@ -1149,6 +1329,25 @@ sub SendMessage {
 
 	# All done!
 	return 1;
+}
+
+# Searches for something in an array
+sub Array_Search {
+	# Get the pointer to array
+	my $ary = shift;
+
+	# Get the name
+	my $name = shift;
+
+	# Iterate over the array
+	foreach my $tmp ( @{ $ary } ) {
+		if ( $tmp eq $name ) {
+			return 1;
+		}
+	}
+
+	# Failed to find a match
+	return 0;
 }
 
 # End of module

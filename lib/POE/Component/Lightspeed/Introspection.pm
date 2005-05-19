@@ -6,10 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1050 $))[1] );
-
-# Import what we need
-use Carp qw( croak );
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1080 $))[1] );
 
 # Load the constants
 use POE::Component::Lightspeed::Constants qw( ACTION_INTROSPECTION FROM_KERNEL FROM_SESSION FROM_STATE FROM_FILE FROM_LINE DEST_KERNEL DEST_SESSION );
@@ -267,12 +264,6 @@ POE::Component::Lightspeed::Introspection - Discovering your network!
 =head1 ABSTRACT
 
 	This module presents an easy API for finding information about the network.
-
-=head1 CHANGES
-
-=head2 0.03
-
-	- Initial version
 
 =head1 DESCRIPTION
 

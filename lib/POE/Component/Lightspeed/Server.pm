@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
+our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1078 $))[1] );
 
 # Set some constants
 BEGIN {
@@ -46,7 +46,7 @@ sub spawn {
 	my %opt = @_;
 
 	# Our own options
-	my ( $ALIAS, $KERNEL, $ADDRESS, $PORT, $SERIALIZERS, $COMPRESSION );
+	my ( $ALIAS, $KERNEL, $ADDRESS, $PORT, $SERIALIZERS, $COMPRESSION, $SSLKEYCERT, $PASSWORD, $AUTHCLIENT );
 
 	# Get the session alias
 	if ( exists $opt{'ALIAS'} and defined $opt{'ALIAS'} and length( $opt{'ALIAS'} ) ) {
@@ -108,6 +108,79 @@ sub spawn {
 		}
 	}
 
+	# Get the SSLKEYCERT
+	if ( exists $opt{'SSLKEYCERT'} and defined $opt{'SSLKEYCERT'} ) {
+		# Test if it is an array
+		if ( ref( $opt{'SSLKEYCERT'} ) eq 'ARRAY' and scalar( @{ $opt{'SSLKEYCERT'} } ) == 2 ) {
+			$SSLKEYCERT = $opt{'SSLKEYCERT'};
+			delete $opt{'SSLKEYCERT'};
+
+			# Okay, pull in what is necessary
+			eval {
+				use POE::Component::SSLify qw( SSLify_Options Server_SSLify );
+				SSLify_Options( @$SSLKEYCERT );
+			};
+			if ( $@ ) {
+				if ( DEBUG ) {
+					warn "Unable to load POE::Component::SSLify -> $@";
+				}
+
+				# Force ourself to not use SSL
+				$SSLKEYCERT = undef;
+			}
+		} else {
+			if ( DEBUG ) {
+				warn 'The SSLKEYCERT option must be an array with exactly 2 elements in it!';
+			}
+		}
+	} else {
+		# Debugging info...
+		if ( DEBUG ) {
+			warn 'Using default SSLKEYCERT = undef';
+		}
+
+		# Set the default
+		$SSLKEYCERT = undef;
+
+		if ( exists $opt{'SSLKEYCERT'} ) {
+			delete $opt{'SSLKEYCERT'};
+		}
+	}
+
+	# Get the PASSWORD
+	if ( exists $opt{'PASSWORD'} and defined $opt{'PASSWORD'} and length( $opt{'PASSWORD'} ) ) {
+		$PASSWORD = delete $opt{'PASSWORD'};
+	} else {
+		# Debugging info...
+		if ( DEBUG ) {
+			warn 'Using default PASSWORD = undef';
+		}
+
+		# Set the default
+		$PASSWORD = undef;
+
+		if ( exists $opt{'PASSWORD'} ) {
+			delete $opt{'PASSWORD'};
+		}
+	}
+
+	# Get the AUTHCLIENT
+	if ( exists $opt{'AUTHCLIENT'} and defined $opt{'AUTHCLIENT'} and ref( $opt{'AUTHCLIENT'} ) and ref( $opt{'AUTHCLIENT'} ) eq 'CODE' ) {
+		$AUTHCLIENT = delete $opt{'AUTHCLIENT'};
+	} else {
+		# Debugging info...
+		if ( DEBUG ) {
+			warn 'Using default AUTHCLIENT = undef';
+		}
+
+		# Set the default
+		$AUTHCLIENT = undef;
+
+		if ( exists $opt{'AUTHCLIENT'} ) {
+			delete $opt{'AUTHCLIENT'};
+		}
+	}
+
 	# Create the POE Session!
 	POE::Session->create(
 		'inline_states'	=>	{
@@ -125,7 +198,7 @@ sub spawn {
 			# ReadWrite events
 			'InputLine'		=>	\&InputLine,
 			'InputHash'		=>	\&InputHash,
-			'Flushed'		=>	\&RWFlush,
+			'RWFlushed'		=>	\&RWFlush,
 			'RWError'		=>	\&RWError,
 
 			# Router events
@@ -138,6 +211,9 @@ sub spawn {
 			'ALIAS'		=>	$ALIAS,
 			'ADDRESS'	=>	$ADDRESS,
 			'PORT'		=>	$PORT,
+			'SSLKEYCERT'	=>	$SSLKEYCERT,
+			'PASSWORD'	=>	$PASSWORD,
+			'AUTHCLIENT'	=>	$AUTHCLIENT,
 
 			# Our ReadWrite wheels here
 			'RW'		=>	{},
@@ -175,7 +251,7 @@ sub StartServer {
 				if ( DEBUG ) {
 					warn "Finally found an alias to use -> " . $_[HEAP]->{'ALIAS'};
 				}
-				
+
 				# Actually set it!
 				$_[KERNEL]->alias_set( $_[HEAP]->{'ALIAS'} );
 				last;
@@ -202,7 +278,7 @@ sub StopServer {
 	$_[KERNEL]->alias_remove( $_[HEAP]->{'ALIAS'} );
 
 	# Shutdown the listening socket
-	delete $_[HEAP]->{'SF'};
+	undef $_[HEAP]->{'SF'};
 
 	# We are shutting down...
 	$_[HEAP]->{'SHUTDOWN'} = 1;
@@ -237,13 +313,39 @@ sub GotConnection {
 	# ARG0 = Socket, ARG1 = Remote Address, ARG2 = Remote Port, ARG3 = wheelid
 	my( $socket, $id ) = @_[ ARG0, ARG3 ];
 
+	# Authenticate this client
+	if ( defined $_[HEAP]->{'AUTHCLIENT'} and ! $_[HEAP]->{'AUTHCLIENT'}->( $_[HEAP]->{'ADDRESS'}, $_[HEAP]->{'PORT'}, $_[ARG1], $_[ARG2] ) ) {
+		if ( DEBUG ) {
+			warn "AUTHCLIENT returned false, closing socket from $_[ARG1]";
+		}
+		
+		# Get rid of this client
+		close $socket;
+		return 1;
+	}
+
+	# Should we SSLify it?
+	if ( defined $_[HEAP]->{'SSLKEYCERT'} ) {
+		# SSLify it!
+		eval { $socket = Server_SSLify( $socket ) };
+		if ( $@ ) {
+			if ( DEBUG ) {
+				warn "Unable to turn socket into SSL -> $@";
+			}
+
+			# Get rid of this client
+			close $socket;
+			return 1;
+		}
+	}
+
 	# Set up the Wheel to read from the socket
 	my $wheel = POE::Wheel::ReadWrite->new(
 		'Handle'	=>	$socket,
 		'Driver'	=>	POE::Driver::SysRW->new(),
 		'Filter'	=>	POE::Filter::Line->new(),
 		'InputEvent'	=>	'InputLine',
-		'FlushedEvent'	=>	'Flushed',
+		'FlushedEvent'	=>	'RWFlushed',
 		'ErrorEvent'	=>	'RWError',
 	);
 
@@ -300,21 +402,45 @@ sub InputLine {
 		# Should be the welcome line
 		if ( $line =~ /^CLIENT\s+Lightspeed\s+v\/(.*)\s+kernel\s+(.*)$/ ) {
 			# Okay, this client talks lightspeed :)
-			$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'compression';
 			$_[HEAP]->{'RW'}->{ $id }->{'CLIENT_VER'} = $1;
 			$_[HEAP]->{'RW'}->{ $id }->{'CLIENT_KERNEL'} = $2;
+
+			# Determine what phase we need to be in
+			if ( defined $_[HEAP]->{'PASSWORD'} ) {
+				$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'password';
+			} else {
+				$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'compression';
+			}
 		} else {
 			# Doesn't talk lightspeed?
 			if ( DEBUG ) {
 				warn "Client doesn't talk Lightspeed -> input was: $line";
 			}
+			
+			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR UNKNOWN DATA' );
+			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
+		}
+	} elsif ( $_[HEAP]->{'RW'}->{ $id }->{'PHASE'} eq 'password' ) {
+		# We require a password, if the client doesn't send it, throw them an error
+		if ( $line =~ /^PASSWORD\s+(.*)$/ ) {
+			my $pass = $1;
 
-			delete $_[HEAP]->{'RW'}->{ $id };
-			return undef;
+			# Check to see if it matches
+			if ( $pass eq $_[HEAP]->{'PASSWORD'} ) {
+				$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'PASSWORD OK' );
+				$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'compression';
+			} else {
+				$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR PASSWORD NOT OK' );
+				$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
+			}
+		} else {
+			# Ah, they didn't have a password set
+			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR PASSWORD REQUIRED' );
+			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
 		}
 	} elsif ( $_[HEAP]->{'RW'}->{ $id }->{'PHASE'} eq 'compression' ) {
 		# Should be the compress line
-		if ( $line =~ /^COMPRESSION (ON|OFF)$/ ) {
+		if ( $line =~ /^COMPRESSION\s+(ON|OFF)$/ ) {
 			# On or off?
 			if ( $1 eq 'ON' ) {
 				$_[HEAP]->{'RW'}->{ $id }->{'COMPRESSION'} = 1;
@@ -325,18 +451,26 @@ sub InputLine {
 			# Move on to the next phase
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'COMPRESSION OK' );
 			$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'serializer';
+		} elsif ( $line =~ /^PASSWORD/ ) {
+			# Ahh, client sent password, it wasn't necessary
+			if ( DEBUG ) {
+				warn "Client sent password, but it wasn't necessary";
+			}
+
+			# Simulate password success so they'll send us the COMPRESSION line
+			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'PASSWORD OK' );
 		} else {
 			# Doesn't talk lightspeed?
 			if ( DEBUG ) {
 				warn "Client doesn't talk Lightspeed -> input was: $line";
 			}
-
-			delete $_[HEAP]->{'RW'}->{ $id };
-			return undef;
+			
+			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR UNKNOWN DATA' );
+			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
 		}
 	} elsif ( $_[HEAP]->{'RW'}->{ $id }->{'PHASE'} eq 'serializer' ) {
 		# Should be the serializer line
-		if ( $line =~ /^SERIALIZER (.*)$/ ) {
+		if ( $line =~ /^SERIALIZER\s+(.*)$/ ) {
 			# Let's see if it is a valid serializer
 			eval { $_[HEAP]->{'RW'}->{ $id }->{'FILTER'} = POE::Filter::Reference->new( $1, $_[HEAP]->{'RW'}->{ $id }->{'COMPRESSION'} ) };
 
@@ -353,8 +487,8 @@ sub InputLine {
 				warn "Client doesn't talk Lightspeed -> input was: $line";
 			}
 
-			delete $_[HEAP]->{'RW'}->{ $id };
-			return undef;
+			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR UNKNOWN DATA' );
+			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
 		}
 	} elsif ( $_[HEAP]->{'RW'}->{ $id }->{'PHASE'} eq 'done' ) {
 		# Should be the "negotiation complete" line
@@ -362,6 +496,9 @@ sub InputLine {
 			# Allright!
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->event( 'InputEvent', 'InputHash' );
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->set_filter( $_[HEAP]->{'RW'}->{ $id }->{'FILTER'} );
+			
+			# Set our phase
+			$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'connected';
 
 			# Let the Router know a link is up
 			$_[KERNEL]->call( $POE::Component::Lightspeed::Router::SES_ALIAS, 'link_up', $id, $_[HEAP]->{'MYKERNEL'}, $_[HEAP]->{'RW'}->{ $id }->{'CLIENT_KERNEL'}, 'Server' );
@@ -371,8 +508,8 @@ sub InputLine {
 				warn "Client doesn't talk Lightspeed -> input was: $line";
 			}
 
-			delete $_[HEAP]->{'RW'}->{ $id };
-			return undef;
+			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR UNKNOWN DATA' );
+			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
 		}
 	}
 
@@ -409,8 +546,14 @@ sub RWError {
 		warn "ReadWrite Wheel $wheel_id generated $operation error $errnum: $errstr\n";
 	}
 
-	# Let the router know a link is down
-	$_[KERNEL]->call( $POE::Component::Lightspeed::Router::SES_ALIAS, 'link_down', $wheel_id );
+	# Do this only if we aren't shutting down
+	if ( ! $_[HEAP]->{'SHUTDOWN'} ) {
+		# Also, if the link was up
+		if ( $_[HEAP]->{'RW'}->{ $wheel_id }->{'PHASE'} eq 'connected' ) {
+			# Let the router know a link is down
+			$_[KERNEL]->call( $POE::Component::Lightspeed::Router::SES_ALIAS, 'link_down', $wheel_id );
+		}
+	}
 
 	# Delete this wheel
 	delete $_[HEAP]->{'RW'}->{ $wheel_id };
@@ -424,7 +567,7 @@ sub RWFlush {
 	# ARG0 = wheel id
 
 	# Are we shutting down?
-	if ( $_[HEAP]->{'SHUTDOWN'} ) {
+	if ( $_[HEAP]->{'SHUTDOWN'} or $_[HEAP]->{'RW'}->{ $_[ARG0] }->{'SHUTDOWN'} ) {
 		# Delete this wheel
 		delete $_[HEAP]->{'RW'}->{ $_[ARG0] };
 	}
@@ -492,16 +635,6 @@ POE::Component::Lightspeed::Server - The "hubs" of the Lightspeed network
 
 	The Lightspeed Server session
 
-=head1 CHANGES
-
-=head2 0.02
-
-	- Documentation tweaks
-
-=head2 0.01
-
-	- Initial Revision
-
 =head1 DESCRIPTION
 
 This module listens for connections from remote Lightspeed clients. Usage is exactly the same as described in the Lightspeed documentation.
@@ -521,7 +654,7 @@ To start the server, just call it's spawn method:
 
 This method will return undef on error or return success.
 
-This constructor accepts only 6 options.
+This constructor accepts only 8 options.
 
 =over 4
 
@@ -561,6 +694,36 @@ This will default to:
 This is the boolean option passed to POE::Filter::Reference
 
 This will default to false ( 0 )
+
+=item C<SSLKEYCERT>
+
+This should be an arrayref of 2 elements:
+	- the public key location
+	- certificate location
+
+Supplying this argument will make the connections use SSL encryption.
+
+This will default to nothing, and not use SSL at all.
+
+=item C<PASSWORD>
+
+The password for the server, used in the connection stage.
+
+This will default to nothing.
+
+=item C<AUTHCLIENT>
+
+This should be a subroutine reference which will be asked whether to accept a new connection or not.
+
+	Arguments:
+		- local address
+		- local port
+		- remote address
+		- remote port
+
+	Should return a boolean true/false if the client is accepted or not
+
+This will default to nothing.
 
 =back
 

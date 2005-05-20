@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1078 $))[1] );
+our $VERSION = '1.' . sprintf( "%04d", (qw($Revision: 1082 $))[1] );
 
 # Set some constants
 BEGIN {
@@ -318,7 +318,7 @@ sub GotConnection {
 		if ( DEBUG ) {
 			warn "AUTHCLIENT returned false, closing socket from $_[ARG1]";
 		}
-		
+
 		# Get rid of this client
 		close $socket;
 		return 1;
@@ -416,7 +416,7 @@ sub InputLine {
 			if ( DEBUG ) {
 				warn "Client doesn't talk Lightspeed -> input was: $line";
 			}
-			
+
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR UNKNOWN DATA' );
 			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
 		}
@@ -464,7 +464,7 @@ sub InputLine {
 			if ( DEBUG ) {
 				warn "Client doesn't talk Lightspeed -> input was: $line";
 			}
-			
+
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->put( 'ERROR UNKNOWN DATA' );
 			$_[HEAP]->{'RW'}->{ $id }->{'SHUTDOWN'} = 1;
 		}
@@ -496,7 +496,7 @@ sub InputLine {
 			# Allright!
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->event( 'InputEvent', 'InputHash' );
 			$_[HEAP]->{'RW'}->{ $id }->{'WHEEL'}->set_filter( $_[HEAP]->{'RW'}->{ $id }->{'FILTER'} );
-			
+
 			# Set our phase
 			$_[HEAP]->{'RW'}->{ $id }->{'PHASE'} = 'connected';
 

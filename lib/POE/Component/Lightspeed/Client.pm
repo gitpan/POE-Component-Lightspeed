@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1078 $))[1] );
+our $VERSION = '1.' . sprintf( "%04d", (qw($Revision: 1082 $))[1] );
 
 # Import what we need
 use Carp qw( croak );
@@ -337,7 +337,7 @@ sub GotConnection {
 			if ( DEBUG ) {
 				warn "Unable to turn socket into SSL -> $@";
 			}
-			
+
 			# Shutdown!
 			$_[KERNEL]->call( $_[SESSION], 'shutdown' );
 		}
@@ -528,7 +528,7 @@ sub InputLine {
 		if ( $line eq 'SERIALIZER OK' ) {
 			# Yay, we are all done...
 			$_[HEAP]->{'RW'}->put( 'DONE' );
-			
+
 			# We are connected!
 			$_[HEAP]->{'PHASE'} = 'connected';
 

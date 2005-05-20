@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1080 $))[1] );
+our $VERSION = '1.' . sprintf( "%04d", (qw($Revision: 1082 $))[1] );
 
 # Set some constants
 BEGIN {
@@ -496,7 +496,7 @@ sub Link_Down {
 	$_[HEAP]->{'SID_WID'}->{ $ses } = [ grep { $_ ne $id } @{ $_[HEAP]->{'SID_WID'}->{ $ses } } ];
 	delete $_[HEAP]->{'WID_SID'}->{ $id };
 	delete $_[HEAP]->{'SID_WID'}->{ $ses } if scalar( @{ $_[HEAP]->{'SID_WID'}->{ $ses } } ) == 0;
-	
+
 	# Delete this edge from our graph
 	$_[HEAP]->{'GRAPH'}->delete_edge( $_[HEAP]->{'MYKERNEL'}, $kernel );
 

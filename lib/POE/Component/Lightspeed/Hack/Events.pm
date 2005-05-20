@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
+our $VERSION = '1.' . sprintf( "%04d", (qw($Revision: 1082 $))[1] );
 
 # These methods are folded into POE::Kernel;
 package POE::Kernel;
@@ -157,22 +157,28 @@ BEGIN {
 
 	# Now, decide which version we should load...
 	my %finalize_versions = (
-		'0.31'		=>	\&_data_ev_finalize_31
+		'0.31'		=>	\&_data_ev_finalize_31,
+		'0.3101'	=>	\&_data_ev_finalize_31,
 	);
 	my %enqueue_versions = (
 		'0.31'		=>	\&_data_ev_enqueue_31,
+		'0.3101'	=>	\&_data_ev_enqueue_31,
 	);
 	my %clear_versions = (
 		'0.31'		=>	\&_data_ev_clear_session_31,
+		'0.3101'	=>	\&_data_ev_clear_session_31,
 	);
 	my %dec_versions = (
 		'0.31'		=>	\&_data_ev_refcount_dec_31,
+		'0.3101'	=>	\&_data_ev_refcount_dec_31,
 	);
 	my %count_to_versions = (
 		'0.31'		=>	\&_data_ev_get_count_to_31,
+		'0.3101'	=>	\&_data_ev_get_count_to_31,
 	);
 	my %count_from_versions = (
 		'0.31'		=>	\&_data_ev_get_count_from_31,
+		'0.3101'	=>	\&_data_ev_get_count_from_31,
 	);
 
 	# Make sure we have this version in the dispatch table

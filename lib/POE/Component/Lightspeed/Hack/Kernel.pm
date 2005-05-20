@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1047 $))[1] );
+our $VERSION = '1.' . sprintf( "%04d", (qw($Revision: 1082 $))[1] );
 
 # Hack the planet!
 package POE::Kernel;
@@ -432,18 +432,23 @@ BEGIN {
 	# Now, decide which version we should load...
 	my %post_versions = (
 		'0.31'		=>	\&_post_31,
+		'0.3101'	=>	\&_post_31,
 	);
 	my %call_versions = (
 		'0.31'		=>	\&_call_31,
+		'0.3101'	=>	\&_call_31,
 	);
 	my %lightspeed_post_versions = (
 		'0.31'		=>	\&_lightspeed_post_31,
+		'0.3101'	=>	\&_lightspeed_post_31,
 	);
 	my %lightspeed_call_versions = (
 		'0.31'		=>	\&_lightspeed_call_31,
+		'0.3101'	=>	\&_lightspeed_call_31,
 	);
 	my %alias_versions = (
 		'0.31'		=>	\&_alias_31,
+		'0.3101'	=>	\&_alias_31,
 	);
 
 	# Make sure we have this version in the dispatch table

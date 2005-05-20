@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.' . sprintf( "%04d", (qw($Revision: 1080 $))[1] );
+our $VERSION = '1.' . sprintf( "%04d", (qw($Revision: 1082 $))[1] );
 
 # Load the constants
 use POE::Component::Lightspeed::Constants qw( ACTION_INTROSPECTION FROM_KERNEL FROM_SESSION FROM_STATE FROM_FILE FROM_LINE DEST_KERNEL DEST_SESSION );

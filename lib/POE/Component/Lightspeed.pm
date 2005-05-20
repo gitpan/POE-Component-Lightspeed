@@ -6,7 +6,7 @@ use strict qw(subs vars refs);				# Make sure we can't mess up
 use warnings FATAL => 'all';				# Enable warnings to catch errors
 
 # Initialize our version
-our $VERSION = '0.04';
+our $VERSION = '0.05';
 
 # This module is just a documentation placeholder
 1;
@@ -105,11 +105,15 @@ POE::Component::Lightspeed - The romping grounds of IKC2
 
 =head1 CHANGES
 
+=head2 0.05
+
+	- Added POE-0.3101 support
+	- Bumped versions of modules so the PAUSE indexer won't complain about it being a lower version
+
 =head2 0.04
 
 	- Added SSL to server/client connections
 	- Added passwords to server/client connections
-	- Fixed the long-standing bug of concurrent client connections causing errors
 	- Documentation tweaks, as usual
 	- Added the AUTHCLIENT parameter to Lightspeed::Server as a hook for accepting connections
 	- Added Lightspeed::Authentication to have authentication hooks on the local kernel
@@ -275,6 +279,8 @@ Being super-friendly as it is, Lightspeed gives the programmer a few extras to m
 	- Keep in mind, when you are sending objects, that the appropriate modules are loaded in both the sender + receiver
 
 =head1 KNOWN BUGS / TODO LIST
+
+	- Having 2 clients connecting at the same time causes the routing system to go snafu :(
 
 	- Argument parsing isn't as strict as it should be, and funky things will be allowed, like:
 		$_[KERNEL]->post( 'poe://kernel1,kernel2,*/session1,session2,*/blah', @args );
